@@ -1,4 +1,4 @@
-const CACHE = "kebiao-v1";
+const CACHE = "kebiao-v2";
 const ASSETS = ["./", "./index.html", "./apple-touch-icon.png", "./icon-192.png", "./icon-512.png", "./manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
@@ -15,6 +15,20 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  // For page navigations, prefer the network so updates arrive, then fall back
+  // to cache when offline (e.g. after the repo is made private again).
+  if (e.request.mode === "navigate") {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then((cached) => {
       const fetched = fetch(e.request).then((res) => {
