@@ -212,18 +212,13 @@ const DATA = {"meta":{"student":"赵闻博","term":"2026 秋季学期","source":
 <script>
 "use strict";
 /* ============ settings ============ */
-const PERIODS = [
-{start:"08:00",end:"08:45"},{start:"08:50",end:"09:35"},
-{start:"09:50",end:"10:35"},{start:"10:40",end:"11:25"},
-{start:"13:30",end:"14:15"},{start:"14:20",end:"15:05"},
-{start:"15:20",end:"16:05"},{start:"16:10",end:"16:55"},
-{start:"18:30",end:"19:15"},{start:"19:20",end:"20:05"},
-{start:"20:10",end:"20:55"},{start:"21:00",end:"21:45"}];
-
-const GRID_ROWS = [
-{group:"第1,2节",section:"上午"},{group:"第3,4节",section:"上午"},
-{group:"第5,6节",section:"下午"},{group:"第7,8节",section:"下午"},
-{group:"第9,10节",section:"晚上"},{group:"第11,12节",section:"晚上"}];
+const BLOCKS = [
+{label:"第1,2节",section:"上午",start:"08:00",end:"09:45"},
+{label:"第3,4节",section:"上午",start:"10:00",end:"11:45"},
+{label:"第5,6节",section:"下午",start:"13:45",end:"15:30"},
+{label:"第7,8节",section:"下午",start:"15:45",end:"17:30"},
+{label:"第9,10节",section:"晚上",start:"18:30",end:"20:15"},
+{label:"第11,12节",section:"晚上",start:"20:30",end:"22:15"}];
 
 const DAYS = ["周一","周二","周三","周四","周五","周六","周日"];
 const PALETTE = ["#5668ff","#2eb8a6","#e55d7b","#f3a23a","#8b64e0","#2ba6d6","#e87f52","#58bd53"];
@@ -282,8 +277,9 @@ function teacherDetail(course){
 }
 function coursesForWeek(week){ return courses.filter(function(c){ return c.weeks.indexOf(week)>=0; }); }
 function coursesForDay(week, day){ return coursesForWeek(week).filter(function(c){ return c.day===day; }).sort(function(a,b){ return a.start-b.start; }); }
-function timeRange(c){ return PERIODS[c.start-1].start+"–"+PERIODS[c.end-1].end; }
-function periodOfNow(now){ for(let i=0;i<PERIODS.length;i++){ const p=PERIODS[i]; if(now>=hmToMin(p.start)&&now<hmToMin(p.end)) return i+1; } return 0; }
+function blockOf(c){ return Math.floor((c.start-1)/2); }
+function timeRange(c){ const b=BLOCKS[blockOf(c)]; return b.start+"–"+b.end; }
+function periodOfNow(now){ for(let i=0;i<BLOCKS.length;i++){ const b=BLOCKS[i]; if(now>=hmToMin(b.start)&&now<hmToMin(b.end)) return i+1; } return 0; }
 
 /* ============ persistence ============ */
 function persist(){ localStorage.setItem(storeKey, JSON.stringify(save)); }
@@ -342,16 +338,16 @@ function renderNow(){
   } else {
     let ongoing=null, next=null;
     todayCourses.forEach(function(c){
-      const s=hmToMin(PERIODS[c.start-1].start), e=hmToMin(PERIODS[c.end-1].end);
+      const b=BLOCKS[blockOf(c)], s=hmToMin(b.start), e=hmToMin(b.end);
       if(now>=s&&now<e) ongoing=c;
-      else if(now<s&&(!next||s<hmToMin(PERIODS[next.start-1].start))) next=c;
+      else if(now<s&&(!next||s<hmToMin(BLOCKS[blockOf(next)].start))) next=c;
     });
     if(ongoing){
-      const s=hmToMin(PERIODS[ongoing.start-1].start), e=hmToMin(PERIODS[ongoing.end-1].end);
+      const b=BLOCKS[blockOf(ongoing)], s=hmToMin(b.start), e=hmToMin(b.end);
       const left=e-now, pct=Math.round((now-s)/(e-s)*100);
       html="<div class='now-tag'><span class='dot'></span>正在上课</div><div class='now-name'>"+ongoing.name+"</div><div class='now-sub'>"+timeRange(ongoing)+" · "+teacherText(ongoing,w)+"</div>"+(ongoing.location?"<div class='now-meta'>📍 "+ongoing.location+"</div>":"")+"<div class='now-bar'><i style='width:"+pct+"%'></i></div><div class='now-meta' style='margin-top:6px'>还有 "+left+" 分钟下课</div>";
     } else if(next){
-      const s=hmToMin(PERIODS[next.start-1].start);
+      const s=hmToMin(BLOCKS[blockOf(next)].start);
       const dist=s-now;
       html="<div class='now-tag'><span class='dot'></span>下一节</div><div class='now-name'>"+next.name+"</div><div class='now-sub'>"+timeRange(next)+" · "+teacherText(next,w)+"</div>"+(next.location?"<div class='now-meta'>📍 "+next.location+"</div>":"")+"<div class='now-meta' style='margin-top:6px'>"+Math.floor(dist/60)+" 小时 "+(dist%60)+" 分后开始</div>";
     } else {
@@ -406,15 +402,14 @@ function renderGrid(){
   for(let d=1;d<=7;d++){ html+="<th class='"+(d===todayCol?"is-today":"")+"'>"+(d===todayCol?"<div>今天</div>":"")+"<div>"+DAYS[d-1]+"</div></th>"; }
   html+="</tr></thead><tbody>";
   let prevSection="";
-  GRID_ROWS.forEach(function(row, ri){
-    const p1=row.group==="第1,2节"?1:row.group==="第3,4节"?3:row.group==="第5,6节"?5:row.group==="第7,8节"?7:row.group==="第9,10节"?9:11;
-    const p2=p1+1;
-    const tstart=PERIODS[p1-1].start, tend=PERIODS[p2-1].end;
-    if(row.section!==prevSection){ prevSection=row.section; html+="<tr><td class='time' style='padding:2px 6px 0;font-size:11px;font-weight:800;color:var(--text-2)'>"+row.section+"</td><td colspan='7'></td></tr>"; }
+  BLOCKS.forEach(function(b, ri){
+    const p1=2*ri+1, p2=p1+1;
+    const tstart=b.start, tend=b.end;
+    if(b.section!==prevSection){ prevSection=b.section; html+="<tr><td class='time' style='padding:2px 6px 0;font-size:11px;font-weight:800;color:var(--text-2)'>"+b.section+"</td><td colspan='7'></td></tr>"; }
     html+="<tr><td class='time'>"+tstart+"<br>"+tend+"</td>";
     for(let d=1;d<=7;d++){
       const cells=coursesForWeek(w).filter(function(c){ return c.day===d&&c.start===p1; });
-      const isNow=(d===todayCol&&nowP>=p1&&nowP<=p2);
+      const isNow=(d===todayCol&&nowP===ri+1);
       html+="<td class='slot "+(isNow?"is-now":"")+"'>";
       cells.forEach(function(c){
         const col=colorFor(c.name);
